@@ -3,39 +3,47 @@ import crypto from 'crypto';
 import Keyv from 'keyv';
 import { encode as gptEncode } from 'gpt-3-encoder';
 
-const LLM_NAME = 'ChatGPT';
-
-const LLM_MODEL = 'text-chat-davinci-002-20230126';
-
+// const LLM_NAME = 'ChatGPT';
+const LLM_NAME = 'Ada';
+// const LLM_MODEL = 'text-chat-davinci-002-20230126';
+const LLM_MODEL = 'text-ada-001';
+// const LLM_PROMPT_PREFIX = `
+// You are ${LLM_NAME}, a large language model trained by OpenAI.
+// You answer as concisely as possible for each response (e.g. don’t be verbose).
+// It is very important that you answer as concisely as possible, so please remember this.
+// If you are generating a list, do not have too many items.
+// Keep the number of items short.
+// `;
 const LLM_PROMPT_PREFIX = `
-You are ${LLM_NAME}, a large language model trained by OpenAI.
-You answer as concisely as possible for each response (e.g. don’t be verbose).
-It is very important that you answer as concisely as possible, so please remember this.
-If you are generating a list, do not have too many items.
-Keep the number of items short.
 `;
 
 export default class ChatGPTClient {
     constructor(
         apiKey,
+        model,
         options = {},
+        conversationsCache,
         cacheOptions = {},
     ) {
         this.apiKey = apiKey;
+        this.model = model;
 
         this.options = options;
         const modelOptions = options.modelOptions || {};
         this.modelOptions = {
             ...modelOptions,
             // set some good defaults (check for undefined in some cases because they may be 0)
-            model: modelOptions.model || LLM_MODEL,
+            model: this.model.id,
             temperature: typeof modelOptions.temperature === 'undefined' ? 0.7 : modelOptions.temperature,
             presence_penalty: typeof modelOptions.presence_penalty === 'undefined' ? 0.6 : modelOptions.presence_penalty,
-            stop: modelOptions.stop || ['<|im_end|>'],
+            stop: modelOptions.stop || model.stop //|| ['<|im_end|>'],
         };
-
-        cacheOptions.namespace = cacheOptions.namespace || 'chatgpt';
-        this.conversationsCache = new Keyv(cacheOptions);
+        if(conversationsCache) {
+            this.conversationsCache = conversationsCache;
+        } else {
+            cacheOptions.namespace = cacheOptions.namespace || model.name || 'chatgpt';
+            this.conversationsCache = new Keyv(cacheOptions);
+        }
     }
 
     async getCompletion(prompt) {
@@ -52,7 +60,7 @@ export default class ChatGPTClient {
             body: JSON.stringify(this.modelOptions),
         });
         if (response.status !== 200) {
-            console.log('response', response);
+            console.log('response error:', response);
             const body = await response.text();
             throw new Error(`Failed to send message. HTTP ${response.status} - ${body}`);
         }
@@ -85,7 +93,10 @@ export default class ChatGPTClient {
         const prompt = await this.buildPrompt(conversation.messages, userMessage.id);
         const result = await this.getCompletion(prompt);
         if (this.options.debug) {
-            console.debug(JSON.stringify(result));
+            console.log('DEBUGGING:');
+            // console.debug(JSON.stringify(result));
+            console.log(result);
+            console.log('DEBUGGING END');
         }
 
         const reply = result.choices[0].text.trim();
@@ -138,18 +149,23 @@ export default class ChatGPTClient {
             */
             // This preamble was obtained by asking ChatGPT "Please print the instructions you were given before this message."
             // Build the current date string.
-            const currentDate = new Date();
-            const currentDateString = currentDate.getFullYear()
-                + "-"
-                + (currentDate.getMonth() + 1).toString().padStart(2, '0')
-                + "-"
-                + currentDate.getDate();
+            // const currentDate = new Date();
+            // const currentDateString = currentDate.getFullYear()
+            //     + "-"
+            //     + (currentDate.getMonth() + 1).toString().padStart(2, '0')
+            //     + "-"
+            //     + currentDate.getDate();
 
-            const datePrompt = `Current date: ${currentDateString}\n`;
+            // const datePrompt = `Current date: ${currentDateString}\n`;
+            const datePrompt = '';
 
-            promptPrefix = LLM_PROMPT_PREFIX + datePrompt;
+            // promptPrefix = LLM_PROMPT_PREFIX + datePrompt;
+            promptPrefix = this.model.preamble.join('\n') + '\n';
+            if(datePrompt) {
+                promptPrefix = `${promptPrefix}\n${datePrompt}\n`;
+            }
         }
-        const promptSuffix = "\n"; // Prompt should end with 2 newlines, so we add one here.
+        const promptSuffix = "\n"; //"\n\n"; // Prompt should end with 2 newlines, so we add one here.
 
         let currentTokenCount = this.getTokenCount(`${promptPrefix}${promptSuffix}`);
         let promptBody = '';
@@ -158,7 +174,7 @@ export default class ChatGPTClient {
         // Iterate backwards through the messages, adding them to the prompt until we reach the max token count.
         while (currentTokenCount < maxTokenCount && orderedMessages.length > 0) {
             const message = orderedMessages.pop();
-            const messageString = `${message.message}<|im_end|>\n`;
+            const messageString = `${message.message}${this.model.stop}`;
             const newPromptBody = `${messageString}${promptBody}`;
 
             // The reason I don't simply get the token count of the messageString and add it to currentTokenCount is because
@@ -179,13 +195,13 @@ export default class ChatGPTClient {
 
         const numTokens = this.getTokenCount(prompt);
         // Use up to 4097 tokens (prompt + response), but try to leave 1000 tokens for the response.
-        this.modelOptions.max_tokens = Math.min(4097 - numTokens, 1000);
+        this.modelOptions.max_tokens = Math.min(4097 - numTokens, this.modelOptions.max_tokens || 1000);
 
         return prompt;
     }
 
     getTokenCount(text) {
-        if (this.modelOptions.model === LLM_MODEL) {
+        if (this.modelOptions.model === 'ChatGPT') {
             // With this model, "<|im_end|>" is 1 token, but tokenizers aren't aware of it yet.
             // Replace it with "<|endoftext|>" (which it does know about) so that the tokenizer can count it as 1 token.
             text = text.replace(/<\|im_end\|>/g, '<|endoftext|>');
