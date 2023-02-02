@@ -3,7 +3,17 @@ import crypto from 'crypto';
 import Keyv from 'keyv';
 import { encode as gptEncode } from 'gpt-3-encoder';
 
-const CHATGPT_MODEL = 'text-chat-davinci-002-20230126';
+const LLM_NAME = 'ChatGPT';
+
+const LLM_MODEL = 'text-chat-davinci-002-20230126';
+
+const LLM_PROMPT_PREFIX = `
+You are ${LLM_NAME}, a large language model trained by OpenAI.
+You answer as concisely as possible for each response (e.g. don’t be verbose).
+It is very important that you answer as concisely as possible, so please remember this.
+If you are generating a list, do not have too many items.
+Keep the number of items short.
+`;
 
 export default class ChatGPTClient {
     constructor(
@@ -18,7 +28,7 @@ export default class ChatGPTClient {
         this.modelOptions = {
             ...modelOptions,
             // set some good defaults (check for undefined in some cases because they may be 0)
-            model: modelOptions.model || CHATGPT_MODEL,
+            model: modelOptions.model || LLM_MODEL,
             temperature: typeof modelOptions.temperature === 'undefined' ? 0.7 : modelOptions.temperature,
             presence_penalty: typeof modelOptions.presence_penalty === 'undefined' ? 0.6 : modelOptions.presence_penalty,
             stop: modelOptions.stop || ['<|im_end|>'],
@@ -42,6 +52,7 @@ export default class ChatGPTClient {
             body: JSON.stringify(this.modelOptions),
         });
         if (response.status !== 200) {
+            console.log('response', response);
             const body = await response.text();
             throw new Error(`Failed to send message. HTTP ${response.status} - ${body}`);
         }
@@ -134,8 +145,9 @@ export default class ChatGPTClient {
                 + "-"
                 + currentDate.getDate();
 
-            promptPrefix = `You are ChatGPT, a large language model trained by OpenAI. You answer as concisely as possible for each response (e.g. don’t be verbose). It is very important that you answer as concisely as possible, so please remember this. If you are generating a list, do not have too many items. Keep the number of items short.
-Current date: ${currentDateString}\n\n`;
+            const datePrompt = `Current date: ${currentDateString}\n`;
+
+            promptPrefix = LLM_PROMPT_PREFIX + datePrompt;
         }
         const promptSuffix = "\n"; // Prompt should end with 2 newlines, so we add one here.
 
@@ -173,7 +185,7 @@ Current date: ${currentDateString}\n\n`;
     }
 
     getTokenCount(text) {
-        if (this.modelOptions.model === CHATGPT_MODEL) {
+        if (this.modelOptions.model === LLM_MODEL) {
             // With this model, "<|im_end|>" is 1 token, but tokenizers aren't aware of it yet.
             // Replace it with "<|endoftext|>" (which it does know about) so that the tokenizer can count it as 1 token.
             text = text.replace(/<\|im_end\|>/g, '<|endoftext|>');

@@ -35,7 +35,7 @@ console.log(boxen('ChatGPT CLI', { padding: 0.7, margin: 1, borderStyle: 'double
 
 await conversation();
 
-async function conversation(conversationId = null, parentMessageId = null) {
+async function startPrompt() {
     const { message } = await inquirer.prompt([
         {
             type: 'input',
@@ -43,6 +43,15 @@ async function conversation(conversationId = null, parentMessageId = null) {
             message: 'Write a message:',
         },
     ]);
+
+    if(message === '' || message === '\n'){
+        return startPrompt();
+    }
+    return message;
+}
+
+async function conversation(conversationId = null, parentMessageId = null) {
+    const message = await startPrompt();
     if (message === '!exit') {
         return true;
     }
