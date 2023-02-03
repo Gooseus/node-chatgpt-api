@@ -3,27 +3,13 @@ import crypto from 'crypto';
 import Keyv from 'keyv';
 import { encode as gptEncode } from 'gpt-3-encoder';
 
-// const LLM_NAME = 'ChatGPT';
-const LLM_NAME = 'Ada';
-// const LLM_MODEL = 'text-chat-davinci-002-20230126';
-const LLM_MODEL = 'text-ada-001';
-// const LLM_PROMPT_PREFIX = `
-// You are ${LLM_NAME}, a large language model trained by OpenAI.
-// You answer as concisely as possible for each response (e.g. don’t be verbose).
-// It is very important that you answer as concisely as possible, so please remember this.
-// If you are generating a list, do not have too many items.
-// Keep the number of items short.
-// `;
-const LLM_PROMPT_PREFIX = `
-`;
-
 export default class ChatGPTClient {
     constructor(
         apiKey,
         model,
         options = {},
-        conversationsCache,
         cacheOptions = {},
+        conversationsCache,
     ) {
         this.apiKey = apiKey;
         this.model = model;
@@ -34,9 +20,10 @@ export default class ChatGPTClient {
             ...modelOptions,
             // set some good defaults (check for undefined in some cases because they may be 0)
             model: this.model.id,
+            max_tokens: this.model.max_tokens,
             temperature: typeof modelOptions.temperature === 'undefined' ? 0.7 : modelOptions.temperature,
             presence_penalty: typeof modelOptions.presence_penalty === 'undefined' ? 0.6 : modelOptions.presence_penalty,
-            stop: modelOptions.stop || model.stop //|| ['<|im_end|>'],
+            stop: modelOptions.stop || model.stop,
         };
         if(conversationsCache) {
             this.conversationsCache = conversationsCache;
@@ -174,7 +161,7 @@ export default class ChatGPTClient {
         // Iterate backwards through the messages, adding them to the prompt until we reach the max token count.
         while (currentTokenCount < maxTokenCount && orderedMessages.length > 0) {
             const message = orderedMessages.pop();
-            const messageString = `${message.message}${this.model.stop}`;
+            const messageString = `${message.message}\n${this.model.stop}`;
             const newPromptBody = `${messageString}${promptBody}`;
 
             // The reason I don't simply get the token count of the messageString and add it to currentTokenCount is because
@@ -195,7 +182,7 @@ export default class ChatGPTClient {
 
         const numTokens = this.getTokenCount(prompt);
         // Use up to 4097 tokens (prompt + response), but try to leave 1000 tokens for the response.
-        this.modelOptions.max_tokens = Math.min(4097 - numTokens, this.modelOptions.max_tokens || 1000);
+        this.modelOptions.max_tokens = Math.min(4097 - numTokens, this.model.max_tokens || this.modelOptions.max_tokens || 1000);
 
         return prompt;
     }
